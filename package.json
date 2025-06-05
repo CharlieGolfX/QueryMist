@@ -1,0 +1,27 @@
+{
+  "name": "querymist",
+  "version": "0.0.1",
+  "description": "A simple Electron frontent that uses ollama and steamdj/mistral-cpu-only",
+  "homepage": "https://github.com/CharlieGolfX/QueryMist#readme",
+  "bugs": {
+    "url": "https://github.com/CharlieGolfX/QueryMist/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CharlieGolfX/QueryMist.git"
+  },
+  "license": "MIT",
+  "author": "CharlieGolfX",
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "electron": "^36.4.0"
+  },
+  "dependencies": {
+    "node-fetch": "^2.7.0"
+  }
+}

@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QueryMist | Chatbot</title>
+    <link rel="stylesheet" href="github-dark.min.css">
+    <script src="highlight.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background: #181a20;
+            color: #f1f1f1;
+        }
+        #chatContainer {
+            flex: 1;
+            margin: 20px auto;
+            padding: 0;
+            background: #20232a;
+            border-radius: 5px;
+            box-shadow: 0 2px 16px 0 #000a;
+            width: 96vw;
+            max-width: 900px;
+            min-height: 0;
+            display: flex;
+            flex-direction: column;
+        }
+        #output {
+            flex: 1;
+            margin: 0;
+            padding: 1em;
+            overflow-y: auto;
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .message-box {
+            background: #23262e;
+            border: 2px solid #393e4a;
+            border-radius: 20px;
+            padding: 1em;
+            max-width: 90%;
+            word-break: break-word;
+            white-space: pre-wrap;
+            font-family: inherit;
+            font-size: 1em;
+            color: #f1f1f1;
+        }
+        .code-box {
+            background: #181a20;
+            border: 2px solid #888;
+            border-radius: 10px;
+            padding: 1em;
+            margin-top: 1em;
+            margin-bottom: 1em;
+            font-size: 1em;
+            overflow-x: auto;
+            color: #f1f1f1;
+        }
+        #inputContainer {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 1em 0.5em;
+            background: #23262e;
+            position: sticky;
+            bottom: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            border-bottom-left-radius: 5px;
+            border-bottom-right-radius: 5px;
+        }
+        #promptInput {
+            border-radius: 20px;
+            padding: 8px;
+            border: 1px solid #393e4a;
+            font-size: 1em;
+            width: 70%;
+            background: #181a20;
+            color: #f1f1f1;
+            outline: none;
+        }
+        #promptInput::placeholder {
+            color: #888;
+        }
+        #stopBtn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            border: none;
+            background: #e74c3c;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background 0.2s;
+        }
+        #stopBtn:hover {
+            background: #c0392b;
+        }
+        #stopBtnIcon {
+            width: 18px;
+            height: 18px;
+            background: #23262e;
+            border-radius: 4px;
+            display: block;
+        }
+        .inline-code {
+            background: #23262e;
+            color: #ffeb95;
+            border-radius: 6px;
+            padding: 2px 6px;
+            font-family: "Fira Mono", "Consolas", "Monaco", monospace;
+            font-size: 1em;
+            border: 1px solid #393e4a;
+            margin: 0 2px;
+            display: inline;
+        }
+    </style>
+</head>
+<body>
+    <div id="chatContainer">
+        <div id="output"></div>
+        <div id="inputContainer">
+            <input type="text" id="promptInput" placeholder="">
+            <button id="stopBtn" title="Stop generating">
+                <span id="stopBtnIcon"></span>
+            </button>
+        </div>
+    </div>
+    <script>
+        const output = document.getElementById('output');
+        const promptInput = document.getElementById('promptInput');
+        const stopBtn = document.getElementById('stopBtn');
+        const stopBtnIcon = document.getElementById('stopBtnIcon');
+        let currentOllamaBox = null;
+        let ollamaBuffer = '';
+        let isGenerating = false;
+
+        // Draw a square icon inside the round button
+        stopBtnIcon.style.display = 'inline-block';
+        stopBtnIcon.style.width = '18px';
+        stopBtnIcon.style.height = '18px';
+        stopBtnIcon.style.background = '#23262e';
+        stopBtnIcon.style.borderRadius = '4px';
+
+        // Disable stop button initially
+        stopBtn.disabled = true;
+        stopBtn.style.opacity = 0.5;
+
+        function renderMessage(text, isUser = false) {
+            const box = document.createElement('div');
+            box.className = 'message-box';
+
+            // Simple code block detection (triple backticks)
+            const codeBlockMatch = text.match(/```(\w+)?\n([\s\S]*?)```/);
+            if (codeBlockMatch) {
+                const lang = codeBlockMatch[1] || '';
+                const code = codeBlockMatch[2];
+                box.innerHTML = (isUser ? 'You:' : 'QueryMist:') +
+                    `<pre class="code-box"><code class="language-${lang}">${escapeHtml(code)}</code></pre>`;
+            } else {
+                box.textContent = (isUser ? 'You: ' : 'QueryMist: ') + text;
+            }
+            output.appendChild(box);
+
+            // Highlight code if present
+            box.querySelectorAll('pre code').forEach((el) => {
+                hljs.highlightElement(el);
+            });
+            output.scrollTop = output.scrollHeight;
+            return box;
+        }
+
+        function escapeHtml(text) {
+            return text.replace(/[&<>"']/g, function(m) {
+                return ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    '"': '&quot;',
+                    "'": '&#39;'
+                })[m];
+            });
+        }
+
+        function renderInlineCode(text) {
+            // Replace inline code with <code class="inline-code">...</code>
+            return text.replace(/`([^`]+)`/g, (match, code) => {
+                return `<code class="inline-code">${escapeHtml(code)}</code>`;
+            });
+        }
+
+        promptInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !isGenerating) {
+                const prompt = promptInput.value.trim();
+                if (prompt) {
+                    renderMessage(prompt, true);
+                    currentOllamaBox = renderMessage('', false);
+                    ollamaBuffer = '';
+                    window.ollamaAPI.sendPromptStream(prompt);
+                    promptInput.value = '';
+                    isGenerating = true;
+                    stopBtn.disabled = false;
+                    stopBtn.style.opacity = 1;
+                }
+            }
+        });
+
+        stopBtn.addEventListener('click', () => {
+            if (isGenerating) {
+                window.ollamaAPI.stopGenerating && window.ollamaAPI.stopGenerating();
+                isGenerating = false;
+                stopBtn.disabled = true;
+                stopBtn.style.opacity = 0.5;
+            }
+        });
+
+        window.ollamaAPI.onStream((data) => {
+            if (currentOllamaBox) {
+                ollamaBuffer += data;
+
+                // Parse for code blocks and plain text
+                const parts = [];
+                let lastIndex = 0;
+                const regex = /```(\w*)\n([\s\S]*?)```/g;
+                let match;
+                while ((match = regex.exec(ollamaBuffer)) !== null) {
+                    // Plain text before code block
+                    if (match.index > lastIndex) {
+                        parts.push({ type: 'text', content: ollamaBuffer.slice(lastIndex, match.index) });
+                    }
+                    // Code block
+                    parts.push({ type: 'code', lang: match[1], content: match[2] });
+                    lastIndex = regex.lastIndex;
+                }
+                // Any remaining plain text after the last code block
+                if (lastIndex < ollamaBuffer.length) {
+                    parts.push({ type: 'text', content: ollamaBuffer.slice(lastIndex) });
+                }
+
+                // Build HTML
+                let html = 'QueryMist:';
+                for (const part of parts) {
+                    if (part.type === 'code') {
+                        html += `<pre class="code-box"><code class="language-${part.lang}">${escapeHtml(part.content)}</code></pre>`;
+                    } else {
+                        // Render inline code in plain text
+                        html += renderInlineCode(escapeHtml(part.content));
+                    }
+                }
+                currentOllamaBox.innerHTML = html;
+
+                // Highlight all code blocks
+                currentOllamaBox.querySelectorAll('pre code').forEach((el) => {
+                    hljs.highlightElement(el);
+                });
+                // Highlight inline code (optional, for shell commands etc.)
+                currentOllamaBox.querySelectorAll('.inline-code').forEach((el) => {
+                    hljs.highlightElement(el);
+                });
+
+                output.scrollTop = output.scrollHeight;
+            }
+        });
+
+        // Listen for a custom event from main process to re-enable input after stop
+        window.ollamaAPI && window.ollamaAPI.onStop && window.ollamaAPI.onStop(() => {
+            isGenerating = false;
+            stopBtn.disabled = true;
+            stopBtn.style.opacity = 0.5;
+        });
+    </script>
+</body>
+</html>
